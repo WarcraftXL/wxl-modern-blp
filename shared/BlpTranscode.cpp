@@ -38,6 +38,46 @@ namespace wxl::modern::blp
         constexpr uint32_t kMipSizes    = 0x54; // u32[16]
     }
 
+    bool CapBlpMips(std::span<const uint8_t> in, std::vector<uint8_t>& out, uint32_t maxEdge)
+    {
+        const uint8_t* b = in.data();
+        const uint32_t n = static_cast<uint32_t>(in.size());
+        if (n < 0x94 || rd32(b) != kMagicBlp2) return false;
+
+        const uint32_t width = rd32(b + kWidth), height = rd32(b + kHeight);
+        if (width == 0 || height == 0) return false;
+        const uint32_t maxdim = mx(width, height);
+        if (maxdim <= maxEdge) return false; // already within budget
+
+        uint32_t drop = 0;
+        while ((maxdim >> drop) > maxEdge) ++drop; // halvings until the larger edge fits
+
+        uint32_t mipOff[16], mipSize[16];
+        for (int i = 0; i < 16; ++i) { mipOff[i] = rd32(b + kMipOffsets + i * 4); mipSize[i] = rd32(b + kMipSizes + i * 4); }
+        // The target level must exist in the chain, and the data region must be in range.
+        if (drop >= 16 || mipSize[drop] == 0 || mipOff[drop] == 0) return false;
+        if (mipOff[0] == 0 || mipOff[0] > n) return false;
+
+        // Header (and palette for the palettized encoding) live before the first mip; keep them verbatim.
+        const uint32_t dataStart = mipOff[0];
+        out.assign(b, b + dataStart);
+
+        uint32_t newOff[16] = {}, newSize[16] = {};
+        for (uint32_t i = drop, j = 0; i < 16; ++i, ++j)
+        {
+            if (mipSize[i] == 0 || mipOff[i] == 0) break;
+            if (mipOff[i] + mipSize[i] > n) break; // truncated source level
+            newOff[j]  = static_cast<uint32_t>(out.size());
+            out.insert(out.end(), b + mipOff[i], b + mipOff[i] + mipSize[i]);
+            newSize[j] = mipSize[i];
+        }
+
+        wr32(out.data() + kWidth,  width  >> drop);
+        wr32(out.data() + kHeight, height >> drop);
+        for (int i = 0; i < 16; ++i) { wr32(out.data() + kMipOffsets + i * 4, newOff[i]); wr32(out.data() + kMipSizes + i * 4, newSize[i]); }
+        return true;
+    }
+
     bool TranscodeBlp(std::span<const uint8_t> in, std::vector<uint8_t>& out)
     {
         const uint8_t* b = in.data();

@@ -28,4 +28,10 @@ namespace wxl::modern::blp
 {
     // Transcode an encoding-3 BLP to DXT5. Returns false (serve raw) for any other encoding or a non-BLP.
     bool TranscodeBlp(std::span<const uint8_t> in, std::vector<uint8_t>& out);
+
+    // Caps a BLP's larger edge to maxEdge by dropping the top mip level(s) and re-basing the mip table:
+    // a 2048 texture is served as its existing 1024 mip, a 4096 as its 1024 mip, etc. No decode/re-encode,
+    // so it works for any encoding and loses nothing below the dropped level. Returns false (no change) for
+    // a non-BLP, an image already within maxEdge, or one whose mip chain is too short to reach maxEdge.
+    bool CapBlpMips(std::span<const uint8_t> in, std::vector<uint8_t>& out, uint32_t maxEdge);
 }

@@ -40,6 +40,21 @@ namespace
         return true;
     }
 
+    bool StartsWithCI(std::string_view s, std::string_view prefix)
+    {
+        if (prefix.size() > s.size()) return false;
+        for (size_t i = 0; i < prefix.size(); ++i)
+            if (std::tolower(static_cast<unsigned char>(s[i])) !=
+                std::tolower(static_cast<unsigned char>(prefix[i]))) return false;
+        return true;
+    }
+
+    bool IsTextureComponent(std::string_view name)
+    {
+        return StartsWithCI(name, "item\\texturecomponents\\")
+            || StartsWithCI(name, "item/texturecomponents/");
+    }
+
     // Larger edge a served terrain/model texture is capped to. Oversized modern art (2048/4096) is the
     // main consumer of the client's tight 32-bit address space; serving its existing 1024 mip cuts that
     // ~4x with no decode and no client change.
@@ -48,6 +63,13 @@ namespace
     bool TransformBlp(std::string_view name, std::span<const uint8_t> raw, std::vector<uint8_t>& out)
     {
         if (!EndsWithCI(name, ".blp")) return false;
+
+        if (IsTextureComponent(name) && wxl::modern::blp::TextureComponentToPaletted(raw, out))
+        {
+            wxl::core::log::Printf("modern-blp: %.*s DXT component->paletted (%u -> %u bytes)",
+                int(name.size()), name.data(), uint32_t(raw.size()), uint32_t(out.size()));
+            return true;
+        }
 
         // Cap oversized textures first (drops the top mip level), then transcode if the encoding needs it.
         std::vector<uint8_t> capped;
